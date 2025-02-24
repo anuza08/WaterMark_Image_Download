@@ -1,59 +1,62 @@
 const express = require("express");
-const connectDB = require("./db");
-const cors = require("cors");
-const Item = require("./models/item");
-const cloudinary = require("./cloudinaryConfig");
 const multer = require("multer");
-const upload = multer({ dest: "uploads/" });
+const sharp = require("sharp");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
-const port = 3000;
+const upload = multer({ dest: "uploads/" });
 
-connectDB();
+// Serve static files
+app.use("/output", express.static(path.join(__dirname, "output")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-app.use(cors());
-app.use(express.json());
-
-app.get("/images", async (req, res) => {
-  try {
-    const images = await Item.find({});
-    res.json(images);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-    console.log("Error in /images:", error);
-  }
-});
-
+// Endpoint to upload and watermark an image
 app.post("/upload-file", upload.single("image"), async (req, res) => {
-  console.log("Request received at /upload-file");
   try {
     if (!req.file) {
-      console.log("No file uploaded");
-      return res.status(400).json({ message: "No file uploaded" });
+      return res.status(400).json({ message: "No image uploaded" });
     }
 
-    console.log("Uploading file to Cloudinary...");
-    const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-      folder: "waterMark",
+    // Paths for uploaded files
+    const imagePath = req.file.path;
+    const outputPath = path.join(
+      __dirname,
+      "output",
+      `watermarked_${req.file.originalname}`
+    );
+
+    // Load the watermark image (replace with your watermark path)
+    const watermarkPath = path.join(__dirname, "watermark.png");
+    const watermarkImage = await sharp(watermarkPath)
+      .resize(200, 200) // Resize watermark to 200x200 pixels
+      .toBuffer();
+
+    // Composite the watermark onto the original image
+    await sharp(imagePath)
+      .composite([
+        {
+          input: watermarkImage,
+          gravity: "south east", // Position watermark at the bottom-right corner
+          blend: "over", // Blend mode
+        },
+      ])
+      .toFile(outputPath);
+
+    // Send the watermarked image URL in the response
+    const watermarkedImageUrl = `/output/${path.basename(outputPath)}`;
+    res.json({
+      imageUrl: watermarkedImageUrl,
+      message: "Image watermarked successfully",
     });
-
-    console.log("File uploaded to Cloudinary:", uploadResult.secure_url);
-
-    const newItem = new Item({
-      url: uploadResult.secure_url,
-      urlWatermark: uploadResult.secure_url,
-    });
-
-    await newItem.save();
-    console.log("Item saved to database");
-
-    res.json({ imageUrl: uploadResult.secure_url });
   } catch (error) {
-    res.status(500).json({ message: error.message });
-    console.log(error);
+    console.error("Error processing image:", error);
+    res.status(500).json({ message: "Error processing image" });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
+// Start the server
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
