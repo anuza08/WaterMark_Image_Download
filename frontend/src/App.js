@@ -1,10 +1,11 @@
 import "./App.css";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 function App() {
-  const [data, setData] = useState([]);
   const [image, setImage] = useState(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState("");
+  const [uploadedImageWatermarkUrl, setUploadedImageWatermarkUrl] =
+    useState("");
 
   const handleFileChange = (event) => {
     setImage(event.target.files[0]);
@@ -17,43 +18,65 @@ function App() {
     }
 
     const formData = new FormData();
-    formData.append("image", image);
-    for (let [key, value] of formData.entries()) {
-      console.log(key, value);
-    }
+    formData.append("file", image);
+    formData.append("upload_preset", "watermark");
 
     try {
-      const response = await fetch("http://localhost:3000/upload-file", {
-        method: "POST",
-        body: formData,
-      });
+      const response = await fetch(
+        "https://api.cloudinary.com/v1_1/dpwugcpvq/image/upload",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       const result = await response.json();
       if (response.ok) {
-        setUploadedImageUrl(result.imageUrl);
-        alert("Image uploaded successfully!");
+        setUploadedImageUrl(result.secure_url);
+        setUploadedImageWatermarkUrl(result.secure_url + "?watermark=true");
+
+        await saveImageToDB(
+          result.secure_url,
+          result.secure_url + "?watermark=true"
+        );
       } else {
         alert("Upload failed: " + result.message);
       }
     } catch (error) {
-      console.log("Error uploading image:", error);
+      console.error("Error uploading image:", error);
       alert("Something went wrong!");
+    }
+  };
+
+  const saveImageToDB = async (imageUrl, watermarkUrl) => {
+    try {
+      const response = await fetch("http://localhost:5000/upload", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: imageUrl, urlWatermark: watermarkUrl }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert("Image URL stored in database successfully!");
+        console.log("Saved Data:", data);
+      } else {
+        alert("Failed to save image URL: " + data.error);
+      }
+    } catch (error) {
+      console.log("Error saving image URL:", error);
+      alert("Something went wrong while saving to DB!");
     }
   };
 
   return (
     <div className="App">
-      <h1>Image Upload to Cloudinary</h1>
+      <h1>Image Upload & Save</h1>
 
-      <h2>Stored Images:</h2>
-      {data.map((item, index) => (
-        <img key={index} src={item.url} alt={`img-${index}`} width="150" />
-      ))}
-
-      <div>
-        <input type="file" onChange={handleFileChange} />
-        <button onClick={handleUpload}>Upload</button>
-      </div>
+      <input type="file" onChange={handleFileChange} />
+      <button onClick={handleUpload}>Upload</button>
 
       {uploadedImageUrl && (
         <div>
